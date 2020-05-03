@@ -115,6 +115,7 @@ class Join extends Component {
                   "join",
                   { userName, roomName },
                   (error) => {
+                    console.log(error)
                     if(typeof(error)==="object"){
                       this.props.history.push({
                         pathname: "/chat",

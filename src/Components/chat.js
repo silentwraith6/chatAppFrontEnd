@@ -12,6 +12,7 @@ import {
   Typography,
   Card,
   Fab,
+  Badge,
 } from "@material-ui/core";
 import moment from "moment";
 import ExpandMoreRoundedIcon from "@material-ui/icons/ExpandMoreRounded";
@@ -78,9 +79,9 @@ const styles = (theme) => ({
   fabVisible: {
     backgroundColor: "#8684b5",
     opacity: "0.8",
-    bottom:"20px",
-    right:"60px",
-    position:"absolute"
+    bottom: "20px",
+    right: "60px",
+    position: "absolute",
   },
   fabHidden: {
     display: "none",
@@ -109,6 +110,8 @@ class Chat extends Component {
           userJoined: userJoinTemp,
           status: null,
           showFab: false,
+          unreadCount: 0,
+          unreadAdminMsg: false,
         };
     this.props.socket.emit(
       "join",
@@ -121,7 +124,8 @@ class Chat extends Component {
 
   componentDidMount() {
     const chat = document.getElementById("chatList");
-    // chat.scrollTop = chat.scrollHeight;
+    chat.scrollTop = chat.scrollHeight;
+    chat.addEventListener("scroll", this.removeFabOnScroll);
 
     this.props.socket.on("serverToClientMessage", (msgObject, callback) => {
       msgObject.recOnClientAt = new Date().getTime();
@@ -129,25 +133,55 @@ class Chat extends Component {
       this.addMessage(msgObject);
     });
 
-    window.addEventListener("offline", () => {
-      this.setState({ status: "disconnected" });
-    });
-    window.addEventListener("online", () => {
-      this.setState({ status: "connected" });
-      this.props.socket.emit(
-        "updateMessages",
-        this.state.messages[this.state.messages.length - 1].id,
-        this.state.roomName,
-        (missedMsgs) => {
-          alert("missed " + missedMsgs.length);
-          missedMsgs.map((msgObject) => {
-            this.addMessage(msgObject);
-          });
-          window.location.reload(false);
-        }
-      );
-    });
+    window.addEventListener("offline", this.onOfflineEventListener);
+    window.addEventListener("online", () => this.onOnlineEventListener);
   }
+
+  componentWillUnmount() {
+    window.removeEventListener("online", this.onOnlineEventListener);
+    window.removeEventListener("offline", this.onOfflineEventListener);
+    document
+      .getElementById("chatList")
+      .removeEventListener("scroll", this.removeFabOnScroll);
+    this.setState({      
+          status: null,
+          showFab: false,
+          unreadCount: 0,
+          unreadAdminMsg: false,
+    })
+    sessionStorage.setItem("state", JSON.stringify(this.state));
+  }
+  removeFabOnScroll = () => {
+    const chat = document.getElementById("chatList");
+    if (
+      Math.ceil(chat.scrollTop + chat.offsetHeight) >=
+      0.99 * chat.scrollHeight
+    ) {
+      this.setState({ showFab: false, unreadCount: 0 });
+      sessionStorage.setItem("state", JSON.stringify(this.state));
+    }
+  };
+  onOfflineEventListener = () => {
+    this.setState({ status: "disconnected" });
+    sessionStorage.setItem("state", JSON.stringify(this.state));
+  };
+
+  onOnlineEventListener = () => {
+    this.setState({ status: "connected" });
+    sessionStorage.setItem("state", JSON.stringify(this.state));
+    this.props.socket.emit(
+      "updateMessages",
+      this.state.messages[this.state.messages.length - 1].id,
+      this.state.roomName,
+      (missedMsgs) => {
+        alert("missed " + missedMsgs.length);
+        missedMsgs.map((msgObject) => {
+          this.addMessage(msgObject);
+        });
+        window.location.reload(false);
+      }
+    );
+  };
 
   autoScrolling = () => {
     const newMessage = document.getElementById("msgList").lastElementChild;
@@ -163,25 +197,46 @@ class Chat extends Component {
 
     const scrollOffset = chat.scrollTop + visibleHeight;
 
-    console.log(
-      "container Height =",
-      containerHeight,
-      "\nnew message Height =",
-      newMessageHeight,
-      "\nscrollOffset =",
-      scrollOffset
-    );
-
     if (
-      Math.floor(containerHeight - newMessageHeight - 2) <=
+      Math.floor(0.99 * (containerHeight - newMessageHeight)) <=
       Math.ceil(scrollOffset)
     ) {
-      chat.scrollTop = chat.scrollHeight + newMessageMargin;
+      if (this.state.unreadAdminMsg) {
+        let updatedMsgs = this.state.messages;
+        updatedMsgs = updatedMsgs.filter((el) => {
+          return el.message !== "Unread Messages" && el.senderName !== "admin";
+        });
+        this.setState({
+          messages: updatedMsgs,
+          unreadAdminMsg: false,
+        });
+        sessionStorage.setItem("state", JSON.stringify(this.state));
+      }
+
+      chat.scrollTo({ top: chat.scrollHeight, behavior: "smooth" });
     } else {
+      if (this.state.unreadCount === 0) {
+        let updatedMsgs = this.state.messages;
+        updatedMsgs.splice(updatedMsgs.length - 1, 0, {
+          message: "Unread Messages",
+          senderName: "admin",
+        });
+        this.setState({
+          messages: updatedMsgs,
+          unreadAdminMsg: true,
+        });
+        sessionStorage.setItem("state", JSON.stringify(this.state));
+      }
       this.setState({
         showFab: true,
+        unreadCount: this.state.unreadCount + 1,
       });
+      sessionStorage.setItem("state", JSON.stringify(this.state));
     }
+  };
+  scrollToBottom = () => {
+    const chat = document.getElementById("chatList");
+    chat.scrollTo({ top: chat.scrollHeight, behavior: "smooth" });
   };
 
   addMessage = (msgObject) => {
@@ -221,99 +276,105 @@ class Chat extends Component {
             Participant Name : {this.state.userName}
           </Typography>
         </Card>
-        <Paper id="chatList" className={classes.msgDisplay} style={{}}>
-          {/* <div> */}
-          <List
-            id="msgList"
+        <Paper className={classes.msgDisplay} style={{}}>
+          <div
+            id="chatList"
             style={{
               bottom: "0",
-              width:"100%",
-              height:"100%",
-              overflow:"auto"
+              width: "100%",
+              height: "100%",
+              overflow: "auto",
             }}
           >
-            {this.state.messages.map((el) => (
-              <ListItem
-                className={
-                  el.senderName === this.state.userName
-                    ? classes.ownMessage
-                    : el.senderName === "admin"
-                    ? classes.adminMessage
-                    : classes.otherMessage
-                }
-              >
-                <div style={{ maxWidth: "243px" }}>
-                  {el.senderName !== this.state.userName &&
-                  el.senderName !== "admin" ? (
-                    <div
-                      style={{
-                        color: "orange",
-                        fontSize: "15px",
-                      }}
-                    >
-                      {el.senderName}
-                    </div>
-                  ) : null}
+            <List id="msgList">
+              {this.state.messages.map((el) => (
+                <ListItem
+                  className={
+                    el.senderName === this.state.userName
+                      ? classes.ownMessage
+                      : el.senderName === "admin"
+                      ? classes.adminMessage
+                      : classes.otherMessage
+                  }
+                >
+                  <div style={{ maxWidth: "243px" }}>
+                    {el.senderName !== this.state.userName &&
+                    el.senderName !== "admin" ? (
+                      <div
+                        style={{
+                          color: "orange",
+                          fontSize: "15px",
+                        }}
+                      >
+                        {el.senderName}
+                      </div>
+                    ) : null}
 
-                  {el.senderName === "admin" ? (
-                    <div
-                      style={{
-                        color: "black",
-                        fontSize: "16px",
-                        fontFamily: "roboto",
-                        fontWeight: "400",
-                        lineHeight: "1.5",
-                        wordWrap: "break-word",
-                        //wordBreak: "break-all",
-                      }}
-                    >
-                      {el.message}
-                    </div>
-                  ) : (
-                    <div
-                      style={{
-                        color: "white",
-                        fontSize: "18px",
-                        fontFamily: "roboto",
-                        fontWeight: "400",
-                        lineHeight: "1.5",
-                        wordWrap: "break-word",
-                        //wordBreak: "break-all",
-                      }}
-                    >
-                      {el.message}
-                    </div>
-                  )}
+                    {el.senderName === "admin" ? (
+                      <div
+                        style={{
+                          color: "black",
+                          fontSize: "16px",
+                          fontFamily: "roboto",
+                          fontWeight: "400",
+                          lineHeight: "1.5",
+                          wordWrap: "break-word",
+                          //wordBreak: "break-all",
+                        }}
+                      >
+                        {el.message}
+                      </div>
+                    ) : (
+                      <div
+                        style={{
+                          color: "white",
+                          fontSize: "18px",
+                          fontFamily: "roboto",
+                          fontWeight: "400",
+                          lineHeight: "1.5",
+                          wordWrap: "break-word",
+                          //wordBreak: "break-all",
+                        }}
+                      >
+                        {el.message}
+                      </div>
+                    )}
 
-                  {el.senderName === "admin" ? null : (
-                    <div
-                      style={{
-                        color: "white",
-                        textAlign: "end",
-                        fontSize: "16px",
-                        fontFamily: "roboto",
-                        fontWeight: "400",
-                        lineHeight: "1.43",
-                      }}
-                    >
-                      {moment(el.createdAt).format("h:mm a")}
-                    </div>
-                  )}
-                </div>
-              </ListItem>
-            ))}
-          </List>
-          {/* </div> */}
-        
+                    {el.senderName === "admin" ? null : (
+                      <div
+                        style={{
+                          color: "white",
+                          textAlign: "end",
+                          fontSize: "16px",
+                          fontFamily: "roboto",
+                          fontWeight: "400",
+                          lineHeight: "1.43",
+                        }}
+                      >
+                        {moment(el.createdAt).format("h:mm a")}
+                      </div>
+                    )}
+                  </div>
+                </ListItem>
+              ))}
+            </List>
+          </div>
+
           <Fab
             className={
               this.state.showFab ? classes.fabVisible : classes.fabHidden
             }
             size="small"
+            onClick={() => {
+              this.scrollToBottom();
+              this.setState({ showFab: false, unreadCount: 0 });
+              sessionStorage.setItem("state", JSON.stringify(this.state));
+            }}
           >
-            <ExpandMoreRoundedIcon />
+            <Badge badgeContent={this.state.unreadCount} color="secondary">
+              <ExpandMoreRoundedIcon />
+            </Badge>
           </Fab>
-        
         </Paper>
 
         <form

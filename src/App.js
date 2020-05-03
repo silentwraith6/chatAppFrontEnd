@@ -3,7 +3,9 @@ import Chat from './Components/chat'
 import Join from './Components/join'
 import { BrowserRouter, Route, Redirect,Switch} from "react-router-dom";
 import io from 'socket.io-client'
-const socket = io("https://chat-app-server-mg.herokuapp.com/");
+// const socket = io("http://192.168.29.238:5000/");
+// const socket = io("http://localhost:5000")
+const socket = io("https://chat-app-server-mg.herokuapp.com/")
 
 function App() {
   return (
