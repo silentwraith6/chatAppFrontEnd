@@ -26,6 +26,8 @@ class Join extends Component {
     super(props);
   }
 
+  
+
   render() {
     const { classes, theme } = this.props;
     return (
@@ -40,10 +42,13 @@ class Join extends Component {
             style={{ fontSize: "40px", fontFamily: "cursive", color: "#fff" }}
           >
             Welcome to Manav's Chat Application
-            
-          </Typography >
-          <br/>
-          <Typography style={{ fontSize: "20px", fontFamily: "cursive", color: "#fff" }}>Please enter details to join/create a chat room</Typography>
+          </Typography>
+          <br />
+          <Typography
+            style={{ fontSize: "20px", fontFamily: "cursive", color: "#fff" }}
+          >
+            Please enter details to join/create a chat room
+          </Typography>
 
           <br />
           <br />
@@ -91,19 +96,38 @@ class Join extends Component {
                 e.preventDefault();
                 let userName = document.getElementById("name").value;
                 let roomName = document.getElementById("roomName").value;
+                document.getElementById("name").value = "";
+                document.getElementById("roomName").value = "";
+                userName = userName.trim();
+                roomName = roomName.trim();
+                if (!userName || !roomName) {
+                  return alert("Username and room are required");
+                }
+                userName = userName.trim();
+                roomName = roomName.trim();
+
+                if (!userName || !roomName) {
+                  return alert("Username and room are required"); 
+                }
+                if (userName === "admin") return alert("Username not valid");
 
                 this.props.socket.emit(
                   "join",
                   { userName, roomName },
                   (error) => {
-                    if (error) return alert(error);
-                    this.props.history.push({
-                      pathname: "/chat",
-                      state: {
-                        userName: userName,
-                        roomName: roomName,
-                      },
-                    });
+                    if(typeof(error)==="object"){
+                      this.props.history.push({
+                        pathname: "/chat",
+                        state: {
+                          userName: userName,
+                          roomName: roomName,
+                          msg:error
+                        },
+                      });
+                    }
+                    else{
+                      alert(error);
+                    }
                   }
                 );
               }}

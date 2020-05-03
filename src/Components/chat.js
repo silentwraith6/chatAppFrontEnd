@@ -11,28 +11,29 @@ import {
   ListItemText,
   Typography,
   Card,
+  Fab,
 } from "@material-ui/core";
 import moment from "moment";
-import AccountCircleIcon from "@material-ui/icons/AccountCircle";
+import ExpandMoreRoundedIcon from "@material-ui/icons/ExpandMoreRounded";
 
 const styles = (theme) => ({
   rootCont: {
     maxWidth: "720px",
-    margin: "0px auto",
+    margin: "0 auto",
     boxShadow: "none",
-	backgroundColor: "#5A5890",
-	height:"100%"
+    backgroundColor: "#5A5890",
+    height: "100%",
   },
   msgDisplay: {
     minWidth: "300px",
     height: "77%",
     margin: "0 auto",
-    overflowY: "scroll",
-    "&:hover": {
-      overflowY: "scroll",
-    },
-	position: "relative",
-	backgroundColor:"#ebebfc"
+    overflowY: "hidden",
+    // "&:hover": {
+    //   overflowY: "scroll",
+    // },
+    position: "relative",
+    backgroundColor: "#ebebfc",
   },
   ownMessage: {
     marginRight: "12px",
@@ -63,8 +64,8 @@ const styles = (theme) => ({
     marginBottom: "5px",
     backgroundColor: "#8684b5",
     margin: "5px auto",
-	padding: "0px 6px",
-	opacity:"0.8",
+    padding: "0px 6px",
+    opacity: "0.8",
     borderRadius: "8px",
     clear: "both",
   },
@@ -73,6 +74,16 @@ const styles = (theme) => ({
   },
   inputInput: {
     color: "black",
+  },
+  fabVisible: {
+    backgroundColor: "#8684b5",
+    opacity: "0.8",
+    bottom:"20px",
+    right:"60px",
+    position:"absolute"
+  },
+  fabHidden: {
+    display: "none",
   },
 });
 
@@ -83,17 +94,22 @@ class Chat extends Component {
     if (
       this.props.location.state &&
       this.props.location.state.userName &&
-      this.props.location.state.roomName
+      this.props.location.state.roomName &&
+      this.props.location.state.msg
     ) {
       userJoinTemp = true;
     }
 
-    this.state = {
-      userName: userJoinTemp ? this.props.location.state.userName : "",
-      messages: [],
-      roomName: userJoinTemp ? this.props.location.state.roomName : "",
-      userJoined: userJoinTemp,
-    };
+    this.state = sessionStorage.getItem("state")
+      ? JSON.parse(sessionStorage.getItem("state"))
+      : {
+          userName: userJoinTemp ? this.props.location.state.userName : "",
+          messages: userJoinTemp ? [this.props.location.state.msg] : [],
+          roomName: userJoinTemp ? this.props.location.state.roomName : "",
+          userJoined: userJoinTemp,
+          status: null,
+          showFab: false,
+        };
     this.props.socket.emit(
       "join",
       { userName: this.state.userName, roomName: this.state.roomName },
@@ -102,21 +118,78 @@ class Chat extends Component {
       }
     );
   }
+
   componentDidMount() {
-    this.props.socket.on("message", (msgObject) => {
-      console.log(msgObject);
+    const chat = document.getElementById("chatList");
+    // chat.scrollTop = chat.scrollHeight;
+
+    this.props.socket.on("serverToClientMessage", (msgObject, callback) => {
+      msgObject.recOnClientAt = new Date().getTime();
+      msgObject.status = "recOnClient";
       this.addMessage(msgObject);
     });
+
+    window.addEventListener("offline", () => {
+      this.setState({ status: "disconnected" });
+    });
+    window.addEventListener("online", () => {
+      this.setState({ status: "connected" });
+      this.props.socket.emit(
+        "updateMessages",
+        this.state.messages[this.state.messages.length - 1].id,
+        this.state.roomName,
+        (missedMsgs) => {
+          alert("missed " + missedMsgs.length);
+          missedMsgs.map((msgObject) => {
+            this.addMessage(msgObject);
+          });
+          window.location.reload(false);
+        }
+      );
+    });
   }
-  componentDidUpdate() {
-    document
-      .getElementById("dummyBottom")
-      .scrollIntoView({ behavior: "smooth" });
-  }
+
+  autoScrolling = () => {
+    const newMessage = document.getElementById("msgList").lastElementChild;
+
+    const newMessageStyles = getComputedStyle(newMessage);
+    const newMessageMargin = parseInt(newMessageStyles.marginBottom);
+    const newMessageHeight = newMessage.offsetHeight + newMessageMargin;
+
+    const chat = document.getElementById("chatList");
+    const visibleHeight = chat.offsetHeight;
+
+    const containerHeight = chat.scrollHeight;
+
+    const scrollOffset = chat.scrollTop + visibleHeight;
+
+    console.log(
+      "container Height =",
+      containerHeight,
+      "\nnew message Height =",
+      newMessageHeight,
+      "\nscrollOffset =",
+      scrollOffset
+    );
+
+    if (
+      Math.floor(containerHeight - newMessageHeight - 2) <=
+      Math.ceil(scrollOffset)
+    ) {
+      chat.scrollTop = chat.scrollHeight + newMessageMargin;
+    } else {
+      this.setState({
+        showFab: true,
+      });
+    }
+  };
+
   addMessage = (msgObject) => {
     this.setState({
       messages: [...this.state.messages, msgObject],
     });
+    sessionStorage.setItem("state", JSON.stringify(this.state));
+    this.autoScrolling();
   };
   render() {
     const { classes, theme } = this.props;
@@ -129,7 +202,6 @@ class Chat extends Component {
         </div>
       );
     }
-
     return (
       <Paper className={classes.rootCont}>
         <Card style={{ height: "11%", backgroundColor: "#5A5890" }}>
@@ -138,47 +210,52 @@ class Chat extends Component {
               color: "white",
               fontSize: "22px",
               fontFamily: "cursive",
-			  marginLeft: "10px",
-			  display:"flex",
-			  height:"100%",
-			  alignItems:"center"
+              marginLeft: "10px",
+              display: "flex",
+              height: "100%",
+              alignItems: "center",
             }}
           >
-            Room Name : {this.state.roomName}<br/>
-			Participant Name : {this.state.userName}
+            Room Name : {this.state.roomName}
+            <br />
+            Participant Name : {this.state.userName}
           </Typography>
         </Card>
-        <Paper className={classes.msgDisplay} style={{}}>
-         
+        <Paper id="chatList" className={classes.msgDisplay} style={{}}>
+          {/* <div> */}
           <List
+            id="msgList"
             style={{
               bottom: "0",
+              width:"100%",
+              height:"100%",
+              overflow:"auto"
             }}
           >
             {this.state.messages.map((el) => (
               <ListItem
                 className={
-                  el.sentBy === this.state.userName
+                  el.senderName === this.state.userName
                     ? classes.ownMessage
-                    : el.sentBy === "admin"
+                    : el.senderName === "admin"
                     ? classes.adminMessage
                     : classes.otherMessage
                 }
               >
                 <div style={{ maxWidth: "243px" }}>
-                  {el.sentBy !== this.state.userName &&
-                  el.sentBy !== "admin" ? (
+                  {el.senderName !== this.state.userName &&
+                  el.senderName !== "admin" ? (
                     <div
                       style={{
                         color: "orange",
                         fontSize: "15px",
                       }}
                     >
-                      {el.sentBy}
+                      {el.senderName}
                     </div>
                   ) : null}
 
-                  {el.sentBy === "admin" ? (
+                  {el.senderName === "admin" ? (
                     <div
                       style={{
                         color: "black",
@@ -190,7 +267,7 @@ class Chat extends Component {
                         //wordBreak: "break-all",
                       }}
                     >
-                      {el.text}
+                      {el.message}
                     </div>
                   ) : (
                     <div
@@ -204,11 +281,11 @@ class Chat extends Component {
                         //wordBreak: "break-all",
                       }}
                     >
-                      {el.text}
+                      {el.message}
                     </div>
                   )}
 
-                  {el.sentBy === "admin" ? null : (
+                  {el.senderName === "admin" ? null : (
                     <div
                       style={{
                         color: "white",
@@ -226,11 +303,26 @@ class Chat extends Component {
               </ListItem>
             ))}
           </List>
-          <div style={{ clear: "both" }} id="dummyBottom" />
+          {/* </div> */}
+        
+          <Fab
+            className={
+              this.state.showFab ? classes.fabVisible : classes.fabHidden
+            }
+            size="small"
+          >
+            <ExpandMoreRoundedIcon />
+          </Fab>
+        
         </Paper>
 
         <form
-          style={{ height:"10%",minWidth: "300px", textAlign: "center", maxWidth: "720px" }}
+          style={{
+            height: "10%",
+            minWidth: "300px",
+            textAlign: "center",
+            maxWidth: "720px",
+          }}
         >
           <TextField
             className={classes.inputRoot}
@@ -244,30 +336,36 @@ class Chat extends Component {
             label="Type your message"
             color="primary"
             autoFocus
-            style={{width:"70%"}}
+            style={{ width: "70%" }}
           />
           <Button
-		  type="submit"
+            type="submit"
             id="send"
             variant="contained"
             color="primary"
             style={{
               marginLeft: "20px",
               marginBottom: "20px",
-			  verticalAlign: "bottom",
-			  backgroundColor:'#298c18'
+              verticalAlign: "bottom",
+              backgroundColor: "#298c18",
             }}
             onClick={(e) => {
               e.preventDefault();
               let msgObject = {
                 message: document.getElementById("msg").value,
                 senderName: this.state.userName,
+                status: "sentFromClient",
+                sentFromClientAt: new Date().getTime(),
               };
               document.getElementById("msg").value = "";
 
-              this.props.socket.emit("message", msgObject, () => {
-                console.log("Delivered");
-              });
+              this.props.socket.emit(
+                "clientToServerMessage",
+                msgObject,
+                (text) => {
+                  console.log(text);
+                }
+              );
             }}
           >
             Send
